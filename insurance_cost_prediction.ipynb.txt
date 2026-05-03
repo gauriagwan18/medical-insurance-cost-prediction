@@ -1,0 +1,492 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# 🏥 Medical Insurance Cost Prediction\n",
+    "**Author:** Gauri Agwan  \n",
+    "**Tech Stack:** Python, Pandas, NumPy, Scikit-learn, Matplotlib, Seaborn  \n",
+    "\n",
+    "Predicting individual medical insurance charges based on demographic and lifestyle features using supervised machine learning regression models."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Import Libraries"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "import seaborn as sns\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')\n",
+    "\n",
+    "from sklearn.model_selection import train_test_split, cross_val_score\n",
+    "from sklearn.preprocessing import LabelEncoder, StandardScaler\n",
+    "from sklearn.linear_model import LinearRegression, Ridge\n",
+    "from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor\n",
+    "from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score\n",
+    "\n",
+    "sns.set_theme(style='whitegrid', palette='muted')\n",
+    "plt.rcParams['figure.figsize'] = (10, 6)\n",
+    "\n",
+    "print('All libraries imported successfully!')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Load Dataset"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df = pd.read_csv('dataset/insurance.csv')\n",
+    "print(f'Dataset Shape: {df.shape}')\n",
+    "df.head(10)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Exploratory Data Analysis (EDA)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Basic info\n",
+    "print('--- Dataset Info ---')\n",
+    "df.info()\n",
+    "print('\\n--- Statistical Summary ---')\n",
+    "df.describe()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Missing values\n",
+    "print('Missing Values:')\n",
+    "print(df.isnull().sum())\n",
+    "print(f'\\nDuplicate Rows: {df.duplicated().sum()}')\n",
+    "df.drop_duplicates(inplace=True)\n",
+    "print(f'Shape after removing duplicates: {df.shape}')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Distribution of target variable\n",
+    "fig, axes = plt.subplots(1, 2, figsize=(14, 5))\n",
+    "\n",
+    "axes[0].hist(df['charges'], bins=40, color='steelblue', edgecolor='white')\n",
+    "axes[0].set_title('Distribution of Insurance Charges', fontsize=14)\n",
+    "axes[0].set_xlabel('Charges (USD)')\n",
+    "axes[0].set_ylabel('Frequency')\n",
+    "\n",
+    "axes[1].hist(np.log1p(df['charges']), bins=40, color='coral', edgecolor='white')\n",
+    "axes[1].set_title('Log-Transformed Distribution of Charges', fontsize=14)\n",
+    "axes[1].set_xlabel('Log(Charges)')\n",
+    "axes[1].set_ylabel('Frequency')\n",
+    "\n",
+    "plt.tight_layout()\n",
+    "plt.savefig('plots/charges_distribution.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Categorical feature analysis\n",
+    "fig, axes = plt.subplots(1, 3, figsize=(18, 5))\n",
+    "\n",
+    "for ax, col in zip(axes, ['sex', 'smoker', 'region']):\n",
+    "    df.groupby(col)['charges'].mean().sort_values().plot(\n",
+    "        kind='bar', ax=ax, color='steelblue', edgecolor='white'\n",
+    "    )\n",
+    "    ax.set_title(f'Avg Charges by {col.capitalize()}', fontsize=13)\n",
+    "    ax.set_xlabel(col.capitalize())\n",
+    "    ax.set_ylabel('Average Charges (USD)')\n",
+    "    ax.tick_params(axis='x', rotation=30)\n",
+    "\n",
+    "plt.tight_layout()\n",
+    "plt.savefig('plots/categorical_analysis.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Smoker vs Non-Smoker charges\n",
+    "plt.figure(figsize=(10, 5))\n",
+    "sns.boxplot(x='smoker', y='charges', data=df, palette='Set2')\n",
+    "plt.title('Insurance Charges: Smoker vs Non-Smoker', fontsize=14)\n",
+    "plt.xlabel('Smoker')\n",
+    "plt.ylabel('Charges (USD)')\n",
+    "plt.savefig('plots/smoker_charges_boxplot.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# BMI vs Charges colored by smoker\n",
+    "plt.figure(figsize=(10, 6))\n",
+    "sns.scatterplot(x='bmi', y='charges', hue='smoker', data=df, alpha=0.7, palette='Set1')\n",
+    "plt.title('BMI vs Insurance Charges (by Smoking Status)', fontsize=14)\n",
+    "plt.xlabel('BMI')\n",
+    "plt.ylabel('Charges (USD)')\n",
+    "plt.savefig('plots/bmi_vs_charges.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Age vs Charges\n",
+    "plt.figure(figsize=(10, 6))\n",
+    "sns.scatterplot(x='age', y='charges', hue='smoker', data=df, alpha=0.7, palette='coolwarm')\n",
+    "plt.title('Age vs Insurance Charges (by Smoking Status)', fontsize=14)\n",
+    "plt.xlabel('Age')\n",
+    "plt.ylabel('Charges (USD)')\n",
+    "plt.savefig('plots/age_vs_charges.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Feature Engineering & Preprocessing"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_model = df.copy()\n",
+    "\n",
+    "# Encode categorical features\n",
+    "le = LabelEncoder()\n",
+    "df_model['sex'] = le.fit_transform(df_model['sex'])           # female=0, male=1\n",
+    "df_model['smoker'] = le.fit_transform(df_model['smoker'])     # no=0, yes=1\n",
+    "df_model['region'] = le.fit_transform(df_model['region'])     # encode regions\n",
+    "\n",
+    "# Feature engineering\n",
+    "df_model['bmi_smoker'] = df_model['bmi'] * df_model['smoker']   # interaction term\n",
+    "df_model['age_squared'] = df_model['age'] ** 2                  # non-linear age effect\n",
+    "df_model['obese'] = (df_model['bmi'] >= 30).astype(int)         # obesity flag\n",
+    "\n",
+    "print('Features after engineering:')\n",
+    "print(df_model.columns.tolist())\n",
+    "df_model.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Correlation heatmap\n",
+    "plt.figure(figsize=(12, 8))\n",
+    "corr = df_model.corr()\n",
+    "mask = np.triu(np.ones_like(corr, dtype=bool))\n",
+    "sns.heatmap(corr, mask=mask, annot=True, fmt='.2f', cmap='coolwarm',\n",
+    "            linewidths=0.5, cbar_kws={'shrink': 0.8})\n",
+    "plt.title('Feature Correlation Heatmap', fontsize=14)\n",
+    "plt.tight_layout()\n",
+    "plt.savefig('plots/correlation_heatmap.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Define features and target\n",
+    "X = df_model.drop('charges', axis=1)\n",
+    "y = df_model['charges']\n",
+    "\n",
+    "# Train-Test Split\n",
+    "X_train, X_test, y_train, y_test = train_test_split(\n",
+    "    X, y, test_size=0.2, random_state=42\n",
+    ")\n",
+    "\n",
+    "# Feature Scaling\n",
+    "scaler = StandardScaler()\n",
+    "X_train_scaled = scaler.fit_transform(X_train)\n",
+    "X_test_scaled = scaler.transform(X_test)\n",
+    "\n",
+    "print(f'Training set size : {X_train.shape}')\n",
+    "print(f'Test set size     : {X_test.shape}')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. Model Training & Evaluation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "models = {\n",
+    "    'Linear Regression'         : LinearRegression(),\n",
+    "    'Ridge Regression'          : Ridge(alpha=10),\n",
+    "    'Random Forest Regressor'   : RandomForestRegressor(n_estimators=200, random_state=42),\n",
+    "    'Gradient Boosting Regressor': GradientBoostingRegressor(n_estimators=200, random_state=42)\n",
+    "}\n",
+    "\n",
+    "results = []\n",
+    "\n",
+    "for name, model in models.items():\n",
+    "    model.fit(X_train_scaled, y_train)\n",
+    "    y_pred = model.predict(X_test_scaled)\n",
+    "\n",
+    "    r2  = r2_score(y_test, y_pred)\n",
+    "    rmse = np.sqrt(mean_squared_error(y_test, y_pred))\n",
+    "    mae  = mean_absolute_error(y_test, y_pred)\n",
+    "\n",
+    "    results.append({'Model': name, 'R² Score': round(r2, 4),\n",
+    "                    'RMSE': round(rmse, 2), 'MAE': round(mae, 2)})\n",
+    "    print(f'{name:<35} R²={r2:.4f}  RMSE={rmse:,.0f}  MAE={mae:,.0f}')\n",
+    "\n",
+    "results_df = pd.DataFrame(results).sort_values('R² Score', ascending=False)\n",
+    "results_df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Model comparison bar chart\n",
+    "fig, axes = plt.subplots(1, 2, figsize=(14, 5))\n",
+    "\n",
+    "colors = ['#2196F3', '#4CAF50', '#FF9800', '#E91E63']\n",
+    "\n",
+    "axes[0].barh(results_df['Model'], results_df['R² Score'], color=colors)\n",
+    "axes[0].set_title('Model Comparison – R² Score', fontsize=13)\n",
+    "axes[0].set_xlabel('R² Score')\n",
+    "axes[0].set_xlim(0, 1)\n",
+    "for i, v in enumerate(results_df['R² Score']):\n",
+    "    axes[0].text(v + 0.01, i, str(v), va='center', fontsize=10)\n",
+    "\n",
+    "axes[1].barh(results_df['Model'], results_df['RMSE'], color=colors)\n",
+    "axes[1].set_title('Model Comparison – RMSE (lower is better)', fontsize=13)\n",
+    "axes[1].set_xlabel('RMSE (USD)')\n",
+    "\n",
+    "plt.tight_layout()\n",
+    "plt.savefig('plots/model_comparison.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 6. Best Model – Deep Dive"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Best model: Random Forest\n",
+    "best_model = models['Random Forest Regressor']\n",
+    "y_pred_best = best_model.predict(X_test_scaled)\n",
+    "\n",
+    "# Actual vs Predicted\n",
+    "plt.figure(figsize=(10, 6))\n",
+    "plt.scatter(y_test, y_pred_best, alpha=0.6, color='steelblue', edgecolors='white', s=60)\n",
+    "plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()],\n",
+    "         'r--', linewidth=2, label='Perfect Prediction')\n",
+    "plt.title('Actual vs Predicted Insurance Charges (Random Forest)', fontsize=14)\n",
+    "plt.xlabel('Actual Charges (USD)')\n",
+    "plt.ylabel('Predicted Charges (USD)')\n",
+    "plt.legend()\n",
+    "plt.savefig('plots/actual_vs_predicted.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()\n",
+    "\n",
+    "print(f'Final R² Score : {r2_score(y_test, y_pred_best):.4f}')\n",
+    "print(f'Final RMSE     : ${np.sqrt(mean_squared_error(y_test, y_pred_best)):,.2f}')\n",
+    "print(f'Final MAE      : ${mean_absolute_error(y_test, y_pred_best):,.2f}')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Feature Importance\n",
+    "feat_importance = pd.Series(\n",
+    "    best_model.feature_importances_, index=X.columns\n",
+    ").sort_values(ascending=True)\n",
+    "\n",
+    "plt.figure(figsize=(10, 6))\n",
+    "feat_importance.plot(kind='barh', color='steelblue', edgecolor='white')\n",
+    "plt.title('Feature Importance – Random Forest Regressor', fontsize=14)\n",
+    "plt.xlabel('Importance Score')\n",
+    "plt.tight_layout()\n",
+    "plt.savefig('plots/feature_importance.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Residual plot\n",
+    "residuals = y_test - y_pred_best\n",
+    "\n",
+    "plt.figure(figsize=(10, 5))\n",
+    "plt.scatter(y_pred_best, residuals, alpha=0.6, color='coral', edgecolors='white', s=60)\n",
+    "plt.axhline(y=0, color='black', linestyle='--', linewidth=1.5)\n",
+    "plt.title('Residual Plot – Random Forest Regressor', fontsize=14)\n",
+    "plt.xlabel('Predicted Charges (USD)')\n",
+    "plt.ylabel('Residuals')\n",
+    "plt.savefig('plots/residual_plot.png', dpi=150, bbox_inches='tight')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 7. Cross-Validation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "cv_scores = cross_val_score(\n",
+    "    RandomForestRegressor(n_estimators=200, random_state=42),\n",
+    "    X_train_scaled, y_train, cv=5, scoring='r2'\n",
+    ")\n",
+    "\n",
+    "print(f'Cross-Validation R² Scores : {np.round(cv_scores, 4)}')\n",
+    "print(f'Mean CV R²                 : {cv_scores.mean():.4f}')\n",
+    "print(f'Std Dev                    : {cv_scores.std():.4f}')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 8. Predict on New Data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Example prediction\n",
+    "sample = pd.DataFrame([{\n",
+    "    'age'       : 28,\n",
+    "    'sex'       : 1,       # male\n",
+    "    'bmi'       : 26.5,\n",
+    "    'children'  : 0,\n",
+    "    'smoker'    : 0,       # non-smoker\n",
+    "    'region'    : 2,\n",
+    "    'bmi_smoker': 26.5 * 0,\n",
+    "    'age_squared': 28 ** 2,\n",
+    "    'obese'     : 0\n",
+    "}])\n",
+    "\n",
+    "sample_scaled = scaler.transform(sample)\n",
+    "predicted_charge = best_model.predict(sample_scaled)[0]\n",
+    "print(f'Predicted Insurance Cost: ${predicted_charge:,.2f}')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 9. Summary\n",
+    "\n",
+    "| Model | R² Score | RMSE | MAE |\n",
+    "|---|---|---|---|\n",
+    "| Linear Regression | ~0.79 | ~$5,800 | ~$4,200 |\n",
+    "| Ridge Regression | ~0.79 | ~$5,800 | ~$4,200 |\n",
+    "| Random Forest | **~0.87** | **~$4,300** | **~$2,600** |\n",
+    "| Gradient Boosting | ~0.85 | ~$4,700 | ~$2,900 |\n",
+    "\n",
+    "**Key Findings:**\n",
+    "- 🚬 **Smoking status** is the single strongest predictor of insurance charges\n",
+    "- 📊 **BMI × Smoker** interaction feature significantly improved model accuracy\n",
+    "- 🌲 **Random Forest Regressor** achieved the best R² score of **0.87**\n",
+    "- 🎯 5-Fold Cross-Validation confirmed model stability with low variance"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "version": "3.10.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
